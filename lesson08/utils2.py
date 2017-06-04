@@ -1,9 +1,12 @@
-import math, keras, datetime, pandas as pd, numpy as np, keras.backend as K, threading, json, re, collections, tarfile, tensorflow as tf, matplotlib.pyplot as plt, xgboost, operator, random, pickle, glob, os, bcolz, shutil, sklearn, functools, itertools
+import math, keras, datetime, pandas as pd, numpy as np, keras.backend as K, threading, json, re, collections
+import tarfile, tensorflow as tf, matplotlib.pyplot as plt, xgboost, operator, random, pickle, glob, os, bcolz
+import shutil, sklearn, functools, itertools, scipy
 from PIL import Image
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 import matplotlib.patheffects as PathEffects
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.neighbors import NearestNeighbors, LSHForest
+import IPython
 from IPython.display import display, Audio
 from numpy.random import normal
 from gensim.models import word2vec
@@ -13,7 +16,7 @@ from functools import reduce
 from itertools import chain
 
 from tensorflow.python.framework import ops
-from tensorflow.contrib import rnn, legacy_seq2seq as seq2seq
+#from tensorflow.contrib import rnn, legacy_seq2seq as seq2seq
 
 from keras_tqdm import TQDMNotebookCallback
 from keras import initializations
@@ -36,6 +39,7 @@ def load(fname): return pickle.load(open(fname, 'rb'))
 
 
 def limit_mem():
+    K.get_session().close()
     cfg = K.tf.ConfigProto()
     cfg.gpu_options.allow_growth = True
     K.set_session(K.tf.Session(config=cfg))
@@ -107,3 +111,33 @@ def fit_gen(gen, fn, eval_fn, nb_iter):
         fn(*next(gen))
         if i % (nb_iter//10) == 0: eval_fn()
 
+
+def wrap_config(layer):
+    return {'class_name': layer.__class__.__name__, 'config': layer.get_config()}
+
+
+def copy_layer(layer): return layer_from_config(wrap_config(layer))
+
+
+def copy_layers(layers): return [copy_layer(layer) for layer in layers]
+
+
+def copy_weights(from_layers, to_layers):
+    for from_layer,to_layer in zip(from_layers, to_layers):
+        to_layer.set_weights(from_layer.get_weights())
+
+
+def copy_model(m):
+    res = Sequential(copy_layers(m.layers))
+    copy_weights(m.layers, res.layers)
+    return res
+
+
+def insert_layer(model, new_layer, index):
+    res = Sequential()
+    for i,layer in enumerate(model.layers):
+        if i==index: res.add(new_layer)
+        copied = layer_from_config(wrap_config(layer))
+        res.add(copied)
+        copied.set_weights(layer.get_weights())
+    return res
